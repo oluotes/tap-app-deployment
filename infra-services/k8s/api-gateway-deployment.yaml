@@ -1,0 +1,120 @@
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: krakend-api-gateway
+  labels:
+    app: krakend-api-gateway
+    app.kubernetes.io/component: krakend-api-gateway
+    app.kubernetes.io/instance: krakend-api-gateway
+spec: 
+  replicas: 1
+  selector:
+    matchLabels:
+      deployment: krakend-api-gateway
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        deployment: krakend-api-gateway
+      annotations:
+        openshift.io/generated-by: OpenShiftNewApp
+    spec:
+      volumes:
+        - name: krakend-config-volume
+          configMap:
+            name: krakend-config
+            defaultMode: 420
+      containers:
+        - name: krakend-api-gateway
+          image: devopsfaith/krakend:2.0.4
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+            - containerPort: 8090
+              protocol: TCP
+          resources: {}
+          volumeMounts:
+            - name: krakend-config-volume
+              mountPath: /etc/krakend/
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          imagePullPolicy: IfNotPresent
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30
+      dnsPolicy: ClusterFirst
+      securityContext: {}
+      schedulerName: default-scheduler
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 25%
+      maxSurge: 25%
+  revisionHistoryLimit: 10
+  progressDeadlineSeconds: 600
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: krakend-config
+data:
+  krakend.json: |
+    {
+        "$schema": "https://www.krakend.io/schema/v3.json",
+        "version": 3,
+        "endpoints": [],
+        "extra_config": {}
+    }
+---
+kind: Service
+apiVersion: v1
+metadata:
+  name: krakend-api-gateway
+  labels:
+    app: krakend-api-gateway
+    app.kubernetes.io/component: krakend-api-gateway
+    app.kubernetes.io/instance: krakend-api-gateway
+spec:
+  ports:
+    - name: 8080-tcp
+      protocol: TCP
+      port: 8080
+      targetPort: 8080
+    - name: 8090-tcp
+      protocol: TCP
+      port: 8090
+      targetPort: 8090
+  internalTrafficPolicy: Cluster
+  type: ClusterIP
+  sessionAffinity: None
+  selector:
+    deployment: krakend-api-gateway
+# ---
+# kind: Route
+# apiVersion: route.openshift.io/v1
+# metadata:
+#   name: krakend-api-gateway
+#   labels:
+#     app: krakend-api-gateway
+#     app.kubernetes.io/component: krakend-api-gateway
+#     app.kubernetes.io/instance: krakend-api-gateway
+# spec:
+#   to:
+#     kind: Service
+#     name: krakend-api-gateway
+#     weight: 100
+#   port:
+#     targetPort: 8080-tcp
+#   wildcardPolicy: None
+
+---
+apiVersion: projectcontour.io/v1
+kind: HTTPProxy
+metadata:
+  name: api-gtw
+spec:
+  routes:
+  - services:
+    - name: krakend-api-gateway
+      port: 8080
+  virtualhost:
+    fqdn: api-gtw.homelab.com

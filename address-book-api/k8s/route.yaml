@@ -1,0 +1,18 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  annotations:
+    openshift.io/host.generated: "true"
+  labels:
+    app: address-book-api
+    app.kubernetes.io/component: address-book-api
+    app.kubernetes.io/instance: address-book-api
+  name: address-book-api
+spec:
+  port:
+    targetPort: 8080
+  to: 
+    kind: Service
+    name: address-book-api
+    weight: 100
+  wildcardPolicy: None

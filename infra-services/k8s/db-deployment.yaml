@@ -1,0 +1,166 @@
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: poc-mysql-gateway-db
+  annotations:
+    deployment.kubernetes.io/revision: '1'
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: poc-mysql-gateway-db
+  template:
+    metadata:
+      labels:
+        app: poc-mysql-gateway-db
+    spec:
+      volumes:
+        - name: data-volume
+          persistentVolumeClaim:
+            claimName: poc-mysql-gateway-pvc
+            # defaultMode: 420
+      containers:
+        - name: poc-mysql-gateway-db
+          image: 'quay.io/centos7/mysql-80-centos7:latest'
+          ports:
+            - containerPort: 3306
+              protocol: TCP
+          env:
+            - name: MYSQL_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: poc-mysql-gateway-config
+                  key: username
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                configMapKeyRef:
+                  name: poc-mysql-gateway-config
+                  key: password
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom:
+                configMapKeyRef:
+                  name: poc-mysql-gateway-config
+                  key: password
+            - name: MYSQL_DATABASE
+              valueFrom:
+                configMapKeyRef:
+                  name: poc-mysql-gateway-config
+                  key: db_name
+          resources: {}
+          volumeMounts:
+            - name: data-volume
+              mountPath: /var/lib/mysql
+          terminationMessagePath: /dev/termination-log
+          terminationMessagePolicy: File
+          imagePullPolicy: Always
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30
+      dnsPolicy: ClusterFirst
+      securityContext: {}
+      schedulerName: default-scheduler
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 25%
+      maxSurge: 25%
+  revisionHistoryLimit: 10
+  progressDeadlineSeconds: 600
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: poc-mysql-gateway-config
+data:
+  db_name: migratordb
+  password: migrator
+  username: migrator
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: poc-mysql-gateway-pvc
+  annotations:
+    volume.beta.kubernetes.io/storage-provisioner: kubernetes.io/vsphere-volume
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: default
+  volumeMode: Filesystem
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mysql
+spec:
+  replicas: 1
+  serviceName: mysql
+  selector:
+    matchLabels:
+      app: mysql
+  template:
+    metadata:
+      labels:
+        app: mysql
+    spec:
+      terminationGracePeriodSeconds: 10
+      containers:
+        - name: mysql
+          # image: 'quay.io/centos7/mysql-80-centos7:latest'
+          image: registry.pivotal.io/tanzu-mysql-for-kubernetes/tanzu-mysql-instance:1.0.0
+          ports:
+            - name: tpc
+              protocol: TCP
+              containerPort: 3306
+          env:
+            - name: MYSQL_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: poc-mysql-gateway-config
+                  key: username
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                configMapKeyRef:
+                  name: poc-mysql-gateway-config
+                  key: password
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom:
+                configMapKeyRef:
+                  name: poc-mysql-gateway-config
+                  key: password
+            - name: MYSQL_DATABASE
+              valueFrom:
+                configMapKeyRef:
+                  name: poc-mysql-gateway-config
+                  key: db_name
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/mysql
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        storageClassName: default
+        accessModes:
+          - ReadWriteOnce
+        resources:
+          requests: 
+            storage: 1Gi
+---
+kind: Service
+apiVersion: v1
+metadata:
+  name: mysql-svc
+  labels:
+    app: mysql
+spec:
+  ports:
+    - name: 3306-tcp
+      protocol: TCP
+      port: 3306
+      targetPort: 3306
+  clusterIP: None
+  selector:
+    app: mysql
